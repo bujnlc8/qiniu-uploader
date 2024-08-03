@@ -1,11 +1,12 @@
 [package]
 name = "qiniu-uploader"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "Qiniu upload lib with progress bar"
 authors = ["linghaihui <haihuiling2014@gmail.com"]
 license = "MIT"
 repository = "https://github.com/bujnlc8/qiniu-uploader"
+categories = ["qiniu", "qiniu-upload", "progress-bar", "indicatif"]
 
 [dependencies]
 anyhow = "1.0.86"

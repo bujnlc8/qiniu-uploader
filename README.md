@@ -2,6 +2,8 @@
 
 封装了七牛[直传文件](https://developer.qiniu.com/kodo/1312/upload)和[分片上传 v2 版](https://developer.qiniu.com/kodo/6364/multipartupload-interface)，支持显示上传进度条，由[indicatif](https://crates.io/crates/indicatif)提供支持.
 
+![](./snapshot.png)
+
 ## 使用
 
 ```
@@ -9,11 +11,12 @@ cargo add qiniu-uploader
 ```
 
 ```rust
+
+use qiniu_uploader::{QiniuRegionEnum, QiniuUploader};
 use tokio::fs;
-use qiniu_uploader::{QiniuUploader, QiniuRegionEnum};
 
 #[tokio::main]
-async fn main()->Result<(), anyhow::Error>{
+async fn main() -> Result<(), anyhow::Error> {
     let qiniu = QiniuUploader::new(
         String::from("access_key"),
         String::from("access_secret"),
@@ -21,8 +24,8 @@ async fn main()->Result<(), anyhow::Error>{
         Some(QiniuRegionEnum::Z0),
         true,
     );
-    let mut f = fs::File::open("./Cargo.lock").await?;
-    let file_size = f.metadata().await?.size();
+    let f = fs::File::open("./Cargo.lock").await?;
+    let file_size = f.metadata().await?.len();
     qiniu
         .part_upload_file_with_progress(
             "test/Cargo.lock",
@@ -33,7 +36,7 @@ async fn main()->Result<(), anyhow::Error>{
             None,
         )
         .await?;
-    OK(())
+    Ok(())
 }
 ```
 

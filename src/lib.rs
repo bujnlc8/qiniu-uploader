@@ -485,7 +485,7 @@ mod tests {
             Some(QiniuRegionEnum::Z0),
             true,
         );
-        let mut f = fs::File::open("./Cargo.lock").await.unwrap();
+        let f = fs::File::open("./Cargo.lock").await.unwrap();
         let file_size = f.metadata().await.unwrap().size();
         qiniu
             .part_upload_file_with_progress(

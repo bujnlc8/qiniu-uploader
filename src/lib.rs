@@ -438,13 +438,13 @@ impl QiniuUploader {
             let last_bytes = file_size - upload_bytes;
             let mut part_size1 = part_size;
             // 倒数第二次上传后剩余小于1M，附加到倒数第二次上传
-            if last_bytes - part_size < 1024 * 1024 && last_bytes < 1024 * 1024 * 1024 {
+            if last_bytes < part_size + 1024 * 1024 && last_bytes < 1024 * 1024 * 1024 {
                 part_size1 = last_bytes;
             }
             let mut buf = vec![0; part_size1];
             data.read_exact(&mut buf).await?;
             part_number += 1;
-            upload_bytes += buf.len() as usize;
+            upload_bytes += part_size1;
             let this = self.clone();
             let key = key.to_string();
             let upload_id = upload_id.clone();

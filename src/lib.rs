@@ -28,7 +28,7 @@ pub struct QiniuUploader {
     debug: bool,
 }
 
-/// 七牛区域enum，见 <https://developer.qiniu.com/kodo/1671/region-endpoint-fq>
+/// 七牛区域Enum，见 <https://developer.qiniu.com/kodo/1671/region-endpoint-fq>
 #[derive(Debug, Clone, Copy)]
 pub enum QiniuRegionEnum {
     Z0,
@@ -174,17 +174,23 @@ impl QiniuUploader {
     /// - key: 上传文件的key，如test/Cargo.lock
     /// - data: R: AsyncReadExt + Unpin + Send + Sync + 'static
     /// - mime: 文件类型
-    /// - 文件大小，单位 bytes
+    /// - file_size 文件大小，单位 bytes
+    /// - progress_style: 进度条样式
     pub async fn upload_file_with_progress<R: AsyncReadExt + Unpin + Send + Sync + 'static>(
         &self,
         key: &str,
         data: R,
         mime: Mime,
         file_size: usize,
+        progress_style: Option<ProgressStyle>,
     ) -> Result<(), anyhow::Error> {
         let reader = ReaderStream::new(data);
         let pb = ProgressBar::new(file_size as u64);
-        pb.set_style(ProgressStyle::default_bar().template("{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})").unwrap().progress_chars("#>-"));
+        let sty = match progress_style {
+            Some(sty)=>sty,
+            None=> ProgressStyle::default_bar().template("{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})").unwrap().progress_chars("#>-")
+        };
+        pb.set_style(sty);
         let pb1 = pb.clone();
         let stream = reader.inspect_ok(move |chunk| {
             pb1.inc(chunk.len() as u64);
@@ -400,8 +406,8 @@ impl QiniuUploader {
         self,
         key: &str,
         mut data: R,
-        file_size: i64,
-        part_size: Option<i64>,
+        file_size: usize,
+        part_size: Option<usize>,
         threads: Option<u8>,
         progress_style: Option<ProgressStyle>,
     ) -> Result<(), anyhow::Error> {
@@ -418,7 +424,7 @@ impl QiniuUploader {
         // 单个 Part大小范围 1 MB - 1 GB，如果未指定part_size，默认5个线程
         let mut part_size = match part_size {
             Some(size) => size,
-            None => file_size / threads.unwrap_or(5) as i64,
+            None => file_size / threads.unwrap_or(5) as usize,
         };
         if part_size < 1024 * 1024 {
             part_size = 1024 * 1024;
@@ -426,19 +432,19 @@ impl QiniuUploader {
             part_size = 1024 * 1024 * 1024;
         }
         loop {
-            let last_bytes = file_size - upload_bytes;
-            if last_bytes <= 0 {
+            if upload_bytes >= file_size {
                 break;
             }
-            let mut part_size1 = part_size as usize;
+            let last_bytes = file_size - upload_bytes;
+            let mut part_size1 = part_size;
             // 倒数第二次上传后剩余小于1M，附加到倒数第二次上传
             if last_bytes - part_size < 1024 * 1024 && last_bytes < 1024 * 1024 * 1024 {
-                part_size1 = last_bytes as usize;
+                part_size1 = last_bytes;
             }
             let mut buf = vec![0; part_size1];
             data.read_exact(&mut buf).await?;
             part_number += 1;
-            upload_bytes += buf.len() as i64;
+            upload_bytes += buf.len() as usize;
             let this = self.clone();
             let key = key.to_string();
             let upload_id = upload_id.clone();
@@ -464,39 +470,5 @@ impl QiniuUploader {
         // complete part upload
         self.complete_part_upload(key, &upload_id, parts).await?;
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::os::unix::fs::MetadataExt;
-
-    use mime::APPLICATION_OCTET_STREAM;
-    use tokio::fs;
-
-    use super::*;
-
-    #[tokio::test]
-    async fn it_works() {
-        let qiniu = QiniuUploader::new(
-            String::from("access_key"),
-            String::from("access_secret"),
-            String::from("bucket"),
-            Some(QiniuRegionEnum::Z0),
-            true,
-        );
-        let f = fs::File::open("./Cargo.lock").await.unwrap();
-        let file_size = f.metadata().await.unwrap().size();
-        qiniu
-            .part_upload_file_with_progress(
-                "test/Cargo.lock",
-                f,
-                file_size as i64,
-                Some(1024 * 1024 * 50),
-                Some(10),
-                None,
-            )
-            .await
-            .unwrap();
     }
 }

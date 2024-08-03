@@ -30,7 +30,7 @@ async fn main() -> Result<(), anyhow::Error> {
         .part_upload_file_with_progress(
             "test/Cargo.lock",
             f,
-            file_size as i64,
+            file_size as usize,
             Some(1024 * 1024 * 50),
             Some(10),
             None,

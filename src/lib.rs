@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+
 pub use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, io::Cursor, str::FromStr};
@@ -186,7 +187,7 @@ impl QiniuUploader {
     /// - key: 上传文件的key，如test/Cargo.lock
     /// - data: R: AsyncReadExt + Unpin + Send + Sync + 'static
     /// - mime: 文件类型
-    /// - file_size 文件大小，单位 bytes
+    /// - file_size: 文件大小，单位 bytes
     /// - progress_style: 进度条样式
     #[cfg(feature = "progress-bar")]
     pub async fn upload_file<R: AsyncReadExt + Unpin + Send + Sync + 'static>(
@@ -349,7 +350,15 @@ impl QiniuUploader {
             .send()
             .await?
             .json::<PartUploadResponse>()
-            .await?;
+            .await;
+        let response = match response {
+            Ok(response) => response,
+            Err(e) => {
+                // 发生错误取消上传任务
+                self.part_abort(key, upload_id).await?;
+                return Err(anyhow!("上传任务发生异常，已取消, {}", e.to_string()));
+            }
+        };
         if self.debug {
             println!("part_upload response: {:#?}", response);
         }
@@ -395,7 +404,15 @@ impl QiniuUploader {
             .send()
             .await?
             .json::<PartUploadResponse>()
-            .await?;
+            .await;
+        let response = match response {
+            Ok(response) => response,
+            Err(e) => {
+                // 发生错误取消上传任务
+                self.part_abort(key, upload_id).await?;
+                return Err(anyhow!("上传任务发生异常，已取消, {}", e.to_string()));
+            }
+        };
         if self.debug {
             println!("part_upload response: {:#?}", response);
         }
@@ -451,8 +468,8 @@ impl QiniuUploader {
     /// # 分片上传 v2 版，显示进度条
     /// <https://developer.qiniu.com/kodo/6364/multipartupload-interface>
     /// ## 参数
-    /// - key 上传的key，如`test/Cargo.lock`
-    /// - data R: AsyncReadExt + Unpin + Send + Sync + 'static
+    /// - key: 上传的key，如`test/Cargo.lock`
+    /// - data: R: AsyncReadExt + Unpin + Send + Sync + 'static
     /// - file_size: 文件大小，单位 bytes
     /// - part_size: 分片上传的大小，单位bytes，1M-1GB之间，如果指定，优先级比`threads`参数高
     /// - threads: 分片上传线程，在未指定`part_size`参数的情况下生效，默认5
@@ -482,11 +499,7 @@ impl QiniuUploader {
             Some(size) => size,
             None => file_size / threads.unwrap_or(5) as usize,
         };
-        if part_size < PART_MIN_SIZE {
-            part_size = PART_MIN_SIZE;
-        } else if part_size > PART_MAX_SIZE {
-            part_size = PART_MAX_SIZE;
-        }
+        part_size = part_size.clamp(PART_MIN_SIZE, PART_MAX_SIZE);
         loop {
             if upload_bytes >= file_size {
                 break;
@@ -514,11 +527,15 @@ impl QiniuUploader {
         }
         let mut parts = Vec::new();
         for (i, handle) in handles.into_iter().enumerate() {
-            let res = handle.await?.unwrap();
-            parts.push(CompletePartUploadParam {
-                etag: res.etag.clone(),
-                part_number: (i + 1) as i64,
-            });
+            match handle.await? {
+                Ok(res) => {
+                    parts.push(CompletePartUploadParam {
+                        etag: res.etag.clone(),
+                        part_number: (i + 1) as i64,
+                    });
+                }
+                Err(e) => return Err(e),
+            }
         }
         if self.debug {
             println!("parts: {:#?}", parts);
@@ -531,8 +548,8 @@ impl QiniuUploader {
     /// # 分片上传 v2 版，不显示进度条
     /// <https://developer.qiniu.com/kodo/6364/multipartupload-interface>
     /// ## 参数
-    /// - key 上传的key，如`test/Cargo.lock`
-    /// - data R: AsyncReadExt + Unpin + Send + Sync + 'static
+    /// - key: 上传的key，如`test/Cargo.lock`
+    /// - data: R: AsyncReadExt + Unpin + Send + Sync + 'static
     /// - file_size: 文件大小，单位 bytes
     /// - part_size: 分片上传的大小，单位bytes，1M-1GB之间，如果指定，优先级比`threads`参数高
     /// - threads: 分片上传线程，在未指定`part_size`参数的情况下生效，默认5
@@ -555,11 +572,7 @@ impl QiniuUploader {
             Some(size) => size,
             None => file_size / threads.unwrap_or(5) as usize,
         };
-        if part_size < PART_MIN_SIZE {
-            part_size = PART_MIN_SIZE;
-        } else if part_size > PART_MAX_SIZE {
-            part_size = PART_MAX_SIZE;
-        }
+        part_size = part_size.clamp(PART_MIN_SIZE, PART_MAX_SIZE);
         loop {
             if upload_bytes >= file_size {
                 break;
@@ -585,17 +598,45 @@ impl QiniuUploader {
         }
         let mut parts = Vec::new();
         for (i, handle) in handles.into_iter().enumerate() {
-            let res = handle.await?.unwrap();
-            parts.push(CompletePartUploadParam {
-                etag: res.etag.clone(),
-                part_number: (i + 1) as i64,
-            });
+            match handle.await? {
+                Ok(res) => {
+                    parts.push(CompletePartUploadParam {
+                        etag: res.etag.clone(),
+                        part_number: (i + 1) as i64,
+                    });
+                }
+                Err(e) => return Err(e),
+            }
         }
         if self.debug {
             println!("parts: {:#?}", parts);
         }
         // complete part upload
         self.complete_part_upload(key, &upload_id, parts).await?;
+        Ok(())
+    }
+
+    /// # 终止上传(分片)
+    /// <https://developer.qiniu.com/kodo/6367/abort-multipart-upload>
+    /// ## 参数
+    /// - key: 上传的key，如`test/Cargo.lock`
+    /// - upload_id: upload 任务 id
+    pub async fn part_abort(&self, key: &str, upload_id: &str) -> Result<(), anyhow::Error> {
+        let url = format!(
+            "{}/buckets/{}/objects/{}/uploads/{upload_id}",
+            self.region.get_upload_host(),
+            self.bucket,
+            self.get_base64encode_key(key)
+        );
+        let headers = self.get_part_headers(key);
+        let response = reqwest::Client::new()
+            .delete(url)
+            .headers(headers)
+            .send()
+            .await?;
+        if self.debug {
+            println!("part abort {} {}, {:#?}", key, upload_id, response);
+        }
         Ok(())
     }
 }

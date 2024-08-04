@@ -2,6 +2,8 @@
 
 封装了七牛[直传文件](https://developer.qiniu.com/kodo/1312/upload)和[分片上传 v2 版](https://developer.qiniu.com/kodo/6364/multipartupload-interface)，支持显示上传进度条，由[indicatif](https://crates.io/crates/indicatif)提供支持.
 
+分片上传的时候，支持设置分片大小和上传线程数量
+
 ![](./snapshot.png)
 
 ## 使用
@@ -32,16 +34,16 @@ async fn main() -> Result<(), anyhow::Error> {
         Some(QiniuRegionEnum::Z0),
         true,
     );
-    let f = fs::File::open("./Cargo.lock").await?;
+    let file = fs::File::open("./Cargo.lock").await?;
     let file_size = f.metadata().await?.len();
     qiniu
         .part_upload_file(
             "test/Cargo.lock",
-            f,
+            file,
             file_size as usize,
-            Some(1024 * 1024 * 50),
-            Some(10),
-            None,
+            Some(1024 * 1024 * 50), // 分片大小
+            Some(10),               // 上传线程数量
+            None,                   // 进度条样式
         )
         .await?;
     Ok(())

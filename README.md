@@ -6,8 +6,16 @@
 
 ## 使用
 
+默认启用显示进度条
+
 ```
 cargo add qiniu-uploader
+```
+
+也可以关闭显示进度条
+
+```
+cargo add qiniu-uploader --no-default-features
 ```
 
 ```rust
@@ -27,7 +35,7 @@ async fn main() -> Result<(), anyhow::Error> {
     let f = fs::File::open("./Cargo.lock").await?;
     let file_size = f.metadata().await?.len();
     qiniu
-        .part_upload_file_with_progress(
+        .part_upload_file(
             "test/Cargo.lock",
             f,
             file_size as usize,

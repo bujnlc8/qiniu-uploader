@@ -7,7 +7,7 @@ authors = ["linghaihui <75124771@qq.com>"]
 license = "MIT"
 repository = "https://github.com/bujnlc8/qiniu-uploader"
 keywords = ["qiniu", "qiniu-upload", "progress-bar", "indicatif"]
-exclude = ["./snapshot.png"]
+exclude = ["snapshot.png"]
 
 [dependencies]
 anyhow = "1.0.86"

@@ -123,17 +123,17 @@ impl QiniuUploader {
     /// - region 七牛上传区域，默认z0
     /// - debug 是否开启debug
     pub fn new(
-        access_key: String,
-        secret_key: String,
-        bucket: String,
+        access_key: impl Into<String>,
+        secret_key: impl Into<String>,
+        bucket: impl Into<String>,
         region: Option<QiniuRegionEnum>,
         debug: bool,
     ) -> Self {
         let region = region.unwrap_or(QiniuRegionEnum::Z0);
         Self {
-            access_key,
-            secret_key,
-            bucket,
+            access_key: access_key.into(),
+            secret_key: secret_key.into(),
+            bucket: bucket.into(),
             region,
             debug,
         }

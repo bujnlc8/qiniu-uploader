@@ -1,13 +1,13 @@
 [package]
 name = "qiniu-uploader"
-version = "0.1.5"
+version = "0.1.6"
 edition = "2021"
 description = "Qiniu upload lib with progress bar"
 authors = ["linghaihui <75124771@qq.com>"]
 license = "MIT"
 repository = "https://github.com/bujnlc8/qiniu-uploader"
 keywords = ["qiniu", "qiniu-upload", "progress-bar", "indicatif"]
-exclude = ["snapshot.png"]
+exclude = ["snapshot.png", ".github"]
 
 [dependencies]
 anyhow = "1.0.86"
@@ -22,6 +22,10 @@ serde = { version = "1.0.204", features = ["derive"] }
 serde_json = "1.0.122"
 tokio = { version = "1.39.2", default-features = false}
 tokio-util = "0.7.11"
+
+[dev-dependencies]
+tokio = { version = "1.39.2", features=["full"] }
+anyhow = "1.0.86"
 
 [features]
 default = ["progress-bar"]

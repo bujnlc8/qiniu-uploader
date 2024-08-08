@@ -37,5 +37,9 @@ async fn main() -> Result<(), anyhow::Error> {
             None,
         )
         .await?;
+    let file = fs::File::open("./Cargo.lock").await?;
+    qiniu
+        .upload_file_no_progress_bar("test/Cargo.lock.1", file, mime::APPLICATION_OCTET_STREAM)
+        .await?;
     Ok(())
 }

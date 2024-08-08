@@ -2,15 +2,15 @@
 
 pub use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, io::Cursor, str::FromStr};
+use std::{collections::HashMap, str::FromStr};
 
 use base64::prelude::*;
 
 #[cfg(feature = "progress-bar")]
-use futures_util::TryStreamExt;
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 
 #[cfg(feature = "progress-bar")]
-use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use futures_util::TryStreamExt;
 
 use mime::{Mime, APPLICATION_JSON, APPLICATION_OCTET_STREAM};
 use reqwest::{
@@ -18,11 +18,20 @@ use reqwest::{
     multipart::{self, Form},
     Body,
 };
-use tokio::io::{AsyncReadExt, BufReader};
+use tokio::io::AsyncReadExt;
+
+#[cfg(feature = "progress-bar")]
 use tokio_util::io::ReaderStream;
 
 #[cfg(feature = "progress-bar")]
 pub use indicatif;
+
+#[cfg(feature = "progress-bar")]
+use std::io::Cursor;
+
+#[cfg(feature = "progress-bar")]
+use tokio::io::BufReader;
+
 pub use mime;
 
 /// Qiniu上传实例
@@ -210,19 +219,33 @@ impl QiniuUploader {
             pb1.inc(chunk.len() as u64);
         });
         let body = Body::wrap_stream(stream);
-        let form = self.make_multi_part(key, body, mime);
-        if self.debug {
-            println!("multi_part: {:#?}", form);
-        }
+        let resp = self.upload_file_no_progress_bar(key, body, mime).await;
+        pb.finish();
+        resp
+    }
+
+    /// # 直传文件，没有进度条
+    /// <https://developer.qiniu.com/kodo/1312/upload>
+    /// ## 参数
+    /// - key: 上传文件的key，如test/Cargo.lock
+    /// - data: T: Into<Body>
+    /// - mime: 文件类型
+    #[cfg(feature = "progress-bar")]
+    pub async fn upload_file_no_progress_bar<T: Into<Body>>(
+        &self,
+        key: &str,
+        data: T,
+        mime: Mime,
+    ) -> Result<(), anyhow::Error> {
+        let form = self.make_multi_part(key, data, mime);
         let response = reqwest::Client::new()
             .post(self.region.get_upload_host())
             .multipart(form)
             .send()
             .await?;
-        pb.finish();
         if !response.status().is_success() {
             return Err(anyhow!(
-                "Failed to upload file: {}, {}",
+                "Failed to upload file: {} {}",
                 response.status().as_u16(),
                 response
                     .text()
@@ -231,27 +254,25 @@ impl QiniuUploader {
             ));
         }
         if self.debug {
-            println!("upload_file_with_progress response: {:#?}", response);
+            println!("upload_file response: {:#?}", response);
         }
         Ok(())
     }
 
-    /// # 直传文件
+    /// # 直传文件，没有进度条
     /// <https://developer.qiniu.com/kodo/1312/upload>
     /// ## 参数
     /// - key: 上传文件的key，如test/Cargo.lock
-    /// - data: R: AsyncReadExt + Unpin + Send + Sync + 'static
+    /// - data: T: Into<Body>
     /// - mime: 文件类型
     #[cfg(not(feature = "progress-bar"))]
-    pub async fn upload_file<R: AsyncReadExt + Unpin + Send + Sync + 'static>(
+    pub async fn upload_file<T: Into<Body>>(
         &self,
         key: &str,
-        data: R,
+        data: T,
         mime: Mime,
     ) -> Result<(), anyhow::Error> {
-        let reader = ReaderStream::new(data);
-        let body = Body::wrap_stream(reader);
-        let form = self.make_multi_part(key, body, mime);
+        let form = self.make_multi_part(key, data, mime);
         let response = reqwest::Client::new()
             .post(self.region.get_upload_host())
             .multipart(form)
@@ -317,13 +338,13 @@ impl QiniuUploader {
         Ok(response)
     }
     /// 分块上传数据 <https://developer.qiniu.com/kodo/6366/upload-part>
-    #[cfg(not(feature = "progress-bar"))]
-    async fn part_upload(
+    async fn part_upload_no_progress_bar<T: Into<Body>>(
         &self,
         key: &str,
         upload_id: &str,
         part_number: i32,
-        data: Vec<u8>,
+        file_size: usize,
+        data: T,
     ) -> Result<PartUploadResponse, anyhow::Error> {
         let url = format!(
             "{}/buckets/{}/objects/{}/uploads/{upload_id}/{part_number}",
@@ -336,17 +357,14 @@ impl QiniuUploader {
             CONTENT_TYPE,
             HeaderValue::from_str(APPLICATION_OCTET_STREAM.essence_str()).unwrap(),
         );
-        let size = data.len();
         headers.insert(
             CONTENT_LENGTH,
-            HeaderValue::from_str(&size.to_string()).unwrap(),
+            HeaderValue::from_str(&file_size.to_string()).unwrap(),
         );
-        let reader = ReaderStream::new(BufReader::new(Cursor::new(data)));
-        let body = Body::wrap_stream(reader);
         let response = reqwest::Client::new()
             .put(url)
             .headers(headers)
-            .body(body)
+            .body(data)
             .send()
             .await?
             .json::<PartUploadResponse>()
@@ -375,49 +393,18 @@ impl QiniuUploader {
         data: Vec<u8>,
         pb: ProgressBar,
     ) -> Result<PartUploadResponse, anyhow::Error> {
-        let url = format!(
-            "{}/buckets/{}/objects/{}/uploads/{upload_id}/{part_number}",
-            self.region.get_upload_host(),
-            self.bucket,
-            self.get_base64encode_key(key),
-        );
-        let mut headers = self.get_part_headers(key);
-        headers.insert(
-            CONTENT_TYPE,
-            HeaderValue::from_str(APPLICATION_OCTET_STREAM.essence_str()).unwrap(),
-        );
         let size = data.len();
-        headers.insert(
-            CONTENT_LENGTH,
-            HeaderValue::from_str(&size.to_string()).unwrap(),
-        );
         let reader = ReaderStream::new(BufReader::new(Cursor::new(data)));
         let pb1 = pb.clone();
         let stream = reader.inspect_ok(move |chunk| {
             pb1.inc(chunk.len() as u64);
         });
         let body = Body::wrap_stream(stream);
-        let response = reqwest::Client::new()
-            .put(url)
-            .headers(headers)
-            .body(body)
-            .send()
-            .await?
-            .json::<PartUploadResponse>()
+        let resp = self
+            .part_upload_no_progress_bar(key, upload_id, part_number, size, body)
             .await;
-        let response = match response {
-            Ok(response) => response,
-            Err(e) => {
-                // 发生错误取消上传任务
-                self.part_abort(key, upload_id).await?;
-                return Err(anyhow!("上传任务发生异常，已取消, {}", e.to_string()));
-            }
-        };
-        if self.debug {
-            println!("part_upload response: {:#?}", response);
-        }
         pb.finish();
-        Ok(response)
+        resp
     }
 
     /// 完成文件上传 <https://developer.qiniu.com/kodo/6368/complete-multipart-upload>
@@ -553,6 +540,79 @@ impl QiniuUploader {
     /// - file_size: 文件大小，单位 bytes
     /// - part_size: 分片上传的大小，单位bytes，1M-1GB之间，如果指定，优先级比`threads`参数高
     /// - threads: 分片上传线程，在未指定`part_size`参数的情况下生效，默认5
+    #[cfg(feature = "progress-bar")]
+    pub async fn part_upload_file_no_progress_bar<
+        R: AsyncReadExt + Unpin + Send + Sync + 'static,
+    >(
+        self,
+        key: &str,
+        mut data: R,
+        file_size: usize,
+        part_size: Option<usize>,
+        threads: Option<u8>,
+    ) -> Result<(), anyhow::Error> {
+        let initiate = self.initial_part_upload(key).await?;
+        let upload_id = initiate.upload_id;
+        let mut part_number = 0;
+        let mut upload_bytes = 0;
+        let mut handles = Vec::new();
+        // 单个 Part大小范围 1 MB - 1 GB，如果未指定part_size，默认5个线程
+        let mut part_size = match part_size {
+            Some(size) => size,
+            None => file_size / threads.unwrap_or(5) as usize,
+        };
+        part_size = part_size.clamp(PART_MIN_SIZE, PART_MAX_SIZE);
+        loop {
+            if upload_bytes >= file_size {
+                break;
+            }
+            let last_bytes = file_size - upload_bytes;
+            let mut part_size1 = part_size;
+            // 倒数第二次上传后剩余小于1M，附加到倒数第二次上传
+            if last_bytes < part_size + PART_MIN_SIZE && last_bytes < PART_MAX_SIZE {
+                part_size1 = last_bytes;
+            }
+            let mut buf = vec![0; part_size1];
+            data.read_exact(&mut buf).await?;
+            part_number += 1;
+            upload_bytes += part_size1;
+            let this = self.clone();
+            let key = key.to_string();
+            let upload_id = upload_id.clone();
+            let handle = tokio::spawn(async move {
+                this.part_upload_no_progress_bar(&key, &upload_id, part_number, part_size1, buf)
+                    .await
+            });
+            handles.push(handle);
+        }
+        let mut parts = Vec::new();
+        for (i, handle) in handles.into_iter().enumerate() {
+            match handle.await? {
+                Ok(res) => {
+                    parts.push(CompletePartUploadParam {
+                        etag: res.etag.clone(),
+                        part_number: (i + 1) as i64,
+                    });
+                }
+                Err(e) => return Err(e),
+            }
+        }
+        if self.debug {
+            println!("parts: {:#?}", parts);
+        }
+        // complete part upload
+        self.complete_part_upload(key, &upload_id, parts).await?;
+        Ok(())
+    }
+
+    /// # 分片上传 v2 版，不显示进度条
+    /// <https://developer.qiniu.com/kodo/6364/multipartupload-interface>
+    /// ## 参数
+    /// - key: 上传的key，如`test/Cargo.lock`
+    /// - data: R: AsyncReadExt + Unpin + Send + Sync + 'static
+    /// - file_size: 文件大小，单位 bytes
+    /// - part_size: 分片上传的大小，单位bytes，1M-1GB之间，如果指定，优先级比`threads`参数高
+    /// - threads: 分片上传线程，在未指定`part_size`参数的情况下生效，默认5
     #[cfg(not(feature = "progress-bar"))]
     pub async fn part_upload_file<R: AsyncReadExt + Unpin + Send + Sync + 'static>(
         self,
@@ -590,10 +650,10 @@ impl QiniuUploader {
             let this = self.clone();
             let key = key.to_string();
             let upload_id = upload_id.clone();
-            let handle =
-                tokio::spawn(
-                    async move { this.part_upload(&key, &upload_id, part_number, buf).await },
-                );
+            let handle = tokio::spawn(async move {
+                this.part_upload_no_progress_bar(&key, &upload_id, part_number, part_size1, buf)
+                    .await
+            });
             handles.push(handle);
         }
         let mut parts = Vec::new();

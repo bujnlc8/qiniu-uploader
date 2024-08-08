@@ -1,3 +1,6 @@
+[![Crates.io](https://img.shields.io/crates/v/qiniu-uploader?style=flat-square)](https://crates.io/crates/qiniu-uploader)
+[![qiniu-uploader](https://github.com/bujnlc8/qiniu-uploader/actions/workflows/qiniu-uploader.yml/badge.svg)](https://github.com/bujnlc8/qiniu-uploader/actions/workflows/qiniu-uploader.yml)
+
 # 七牛文件上传
 
 封装了七牛[直传文件](https://developer.qiniu.com/kodo/1312/upload)和[分片上传 v2 版](https://developer.qiniu.com/kodo/6364/multipartupload-interface)，支持显示上传进度条，由[indicatif](https://crates.io/crates/indicatif)提供支持.

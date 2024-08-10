@@ -1,6 +1,6 @@
 [package]
 name = "qiniu-uploader"
-version = "0.1.8"
+version = "0.1.9"
 edition = "2021"
 description = "Qiniu upload lib with progress bar"
 authors = ["linghaihui <75124771@qq.com>"]
@@ -30,3 +30,8 @@ anyhow = "1.0.86"
 [features]
 default = ["progress-bar"]
 progress-bar = ["dep:indicatif", "dep:futures-util", "dep:tokio-util"]
+docs = []
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "feature=\"docs\""]

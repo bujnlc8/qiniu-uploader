@@ -268,7 +268,7 @@ impl QiniuUploader {
     /// - key: 上传文件的key，如test/Cargo.lock
     /// - data: T: `Into<Body>`
     /// - mime: 文件类型
-    #[cfg_attr(not(feature = "docs"), doc(cfg(not(feature = "progress-bar"))))]
+    #[cfg_attr(feature = "docs", doc(cfg(not(feature = "progress-bar"))))]
     #[cfg(not(feature = "progress-bar"))]
     pub async fn upload_file<T: Into<Body>>(
         &self,
@@ -620,7 +620,7 @@ impl QiniuUploader {
     /// - file_size: 文件大小，单位 bytes
     /// - part_size: 分片上传的大小，单位bytes，1M-1GB之间，如果指定，优先级比`threads`参数高
     /// - threads: 分片上传线程，在未指定`part_size`参数的情况下生效，默认5
-    #[cfg_attr(not(feature = "docs"), doc(cfg(not(feature = "progress-bar"))))]
+    #[cfg_attr(feature = "docs", doc(cfg(not(feature = "progress-bar"))))]
     #[cfg(not(feature = "progress-bar"))]
     pub async fn part_upload_file<R: AsyncReadExt + Unpin + Send + Sync + 'static>(
         self,

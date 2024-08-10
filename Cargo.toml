@@ -1,13 +1,13 @@
 [package]
 name = "qiniu-uploader"
-version = "0.1.7"
+version = "0.1.8"
 edition = "2021"
 description = "Qiniu upload lib with progress bar"
 authors = ["linghaihui <75124771@qq.com>"]
 license = "MIT"
 repository = "https://github.com/bujnlc8/qiniu-uploader"
 keywords = ["qiniu", "qiniu-upload", "progress-bar", "indicatif"]
-exclude = ["snapshot.png", ".github"]
+exclude = ["snapshot.png", ".github", "Cargo.lock"]
 
 [dependencies]
 anyhow = "1.0.86"

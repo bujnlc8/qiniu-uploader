@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+#![feature(doc_cfg)]
 
 pub use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
@@ -126,11 +127,11 @@ const PART_MAX_SIZE: usize = 1024 * 1024 * 1024;
 impl QiniuUploader {
     /// # 生成上传实例
     /// ## 参数
-    /// - access_key 七牛access_key
-    /// - secret_key 七牛secret_key
-    /// - bucket 七牛bucket
-    /// - region 七牛上传区域，默认z0
-    /// - debug 是否开启debug
+    /// - access_key: 七牛access_key
+    /// - secret_key: 七牛secret_key
+    /// - bucket: 七牛bucket
+    /// - region: 七牛上传区域，默认z0
+    /// - debug: 是否开启debug
     pub fn new(
         access_key: impl Into<String>,
         secret_key: impl Into<String>,
@@ -198,6 +199,7 @@ impl QiniuUploader {
     /// - mime: 文件类型
     /// - file_size: 文件大小，单位 bytes
     /// - progress_style: 进度条样式
+    #[cfg_attr(feature = "progress-bar", doc(cfg(feature = "progress-bar")))]
     #[cfg(feature = "progress-bar")]
     pub async fn upload_file<R: AsyncReadExt + Unpin + Send + Sync + 'static>(
         &self,
@@ -228,8 +230,9 @@ impl QiniuUploader {
     /// <https://developer.qiniu.com/kodo/1312/upload>
     /// ## 参数
     /// - key: 上传文件的key，如test/Cargo.lock
-    /// - data: T: Into<Body>
+    /// - data: T: Into\<Body\>
     /// - mime: 文件类型
+    #[cfg_attr(feature = "progress-bar", doc(cfg(feature = "progress-bar")))]
     #[cfg(feature = "progress-bar")]
     pub async fn upload_file_no_progress_bar<T: Into<Body>>(
         &self,
@@ -263,8 +266,9 @@ impl QiniuUploader {
     /// <https://developer.qiniu.com/kodo/1312/upload>
     /// ## 参数
     /// - key: 上传文件的key，如test/Cargo.lock
-    /// - data: T: Into<Body>
+    /// - data: T: `Into<Body>`
     /// - mime: 文件类型
+    #[cfg_attr(not(feature = "progress-bar"), doc(cfg(not(feature = "progress-bar"))))]
     #[cfg(not(feature = "progress-bar"))]
     pub async fn upload_file<T: Into<Body>>(
         &self,
@@ -384,6 +388,7 @@ impl QiniuUploader {
     }
 
     /// 分块上传数据 <https://developer.qiniu.com/kodo/6366/upload-part>
+    #[cfg_attr(feature = "progress-bar", doc(cfg(feature = "progress-bar")))]
     #[cfg(feature = "progress-bar")]
     async fn part_upload(
         &self,
@@ -461,6 +466,7 @@ impl QiniuUploader {
     /// - part_size: 分片上传的大小，单位bytes，1M-1GB之间，如果指定，优先级比`threads`参数高
     /// - threads: 分片上传线程，在未指定`part_size`参数的情况下生效，默认5
     /// - progress_style: 进度条样式
+    #[cfg_attr(feature = "progress-bar", doc(cfg(feature = "progress-bar")))]
     #[cfg(feature = "progress-bar")]
     pub async fn part_upload_file<R: AsyncReadExt + Unpin + Send + Sync + 'static>(
         self,
@@ -540,6 +546,7 @@ impl QiniuUploader {
     /// - file_size: 文件大小，单位 bytes
     /// - part_size: 分片上传的大小，单位bytes，1M-1GB之间，如果指定，优先级比`threads`参数高
     /// - threads: 分片上传线程，在未指定`part_size`参数的情况下生效，默认5
+    #[cfg_attr(feature = "progress-bar", doc(cfg(feature = "progress-bar")))]
     #[cfg(feature = "progress-bar")]
     pub async fn part_upload_file_no_progress_bar<
         R: AsyncReadExt + Unpin + Send + Sync + 'static,
@@ -613,6 +620,7 @@ impl QiniuUploader {
     /// - file_size: 文件大小，单位 bytes
     /// - part_size: 分片上传的大小，单位bytes，1M-1GB之间，如果指定，优先级比`threads`参数高
     /// - threads: 分片上传线程，在未指定`part_size`参数的情况下生效，默认5
+    #[cfg_attr(not(feature = "progress-bar"), doc(cfg(not(feature = "progress-bar"))))]
     #[cfg(not(feature = "progress-bar"))]
     pub async fn part_upload_file<R: AsyncReadExt + Unpin + Send + Sync + 'static>(
         self,

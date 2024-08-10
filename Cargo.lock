@@ -668,7 +668,7 @@ dependencies = [
 
 [[package]]
 name = "qiniu-uploader"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "anyhow",
  "base64",

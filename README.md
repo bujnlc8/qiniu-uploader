@@ -5,7 +5,7 @@
 
 封装了七牛[直传文件](https://developer.qiniu.com/kodo/1312/upload)和[分片上传 v2 版](https://developer.qiniu.com/kodo/6364/multipartupload-interface)，支持显示上传进度条，由[indicatif](https://crates.io/crates/indicatif)提供支持.
 
-分片上传的时候，支持设置分片大小和上传线程数量
+分片上传的时候，支持设置分片大小和上传线程数量(基于 tokio::spawn)
 
 ![](./snapshot.png)
 

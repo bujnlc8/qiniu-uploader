@@ -1,6 +1,6 @@
 [package]
 name = "qiniu-uploader"
-version = "0.1.10"
+version = "0.1.11"
 edition = "2021"
 description = "Qiniu upload lib with progress bar"
 authors = ["linghaihui <75124771@qq.com>"]

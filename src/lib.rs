@@ -1,3 +1,33 @@
+//! 七牛文件上传
+
+//! use qiniu_uploader::{QiniuRegionEnum, QiniuUploader};
+//! use tokio::fs;
+//!
+//! #[tokio::main]
+//! async fn main() -> Result<(), anyhow::Error> {
+//!     let qiniu = QiniuUploader::new(
+//!         "access_key",
+//!         "secret_key",
+//!         "bucket",
+//!         Some(QiniuRegionEnum::Z0),
+//!         false,
+//!     );
+//!     let file = fs::File::open("./Cargo.lock").await?;
+//!     let file_size = file.metadata().await?.len() as usize;
+//!     qiniu
+//!         .clone()
+//!         .part_upload_file(
+//!             "test/Cargo.lock",
+//!             file,
+//!             file_size,
+//!             Some(1024 * 1024 * 50), // 分片大小
+//!             Some(10),               // 上传线程数量
+//!             None,                   // 进度条样式
+//!         )
+//!         .await?;
+//!     Ok(())
+//! }
+
 #![allow(dead_code)]
 #![cfg_attr(feature = "docs", feature(doc_cfg))]
 
@@ -103,7 +133,7 @@ struct InitialPartUploadResponse {
 }
 
 /// 分片上传响应
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Default)]
 struct PartUploadResponse {
     pub etag: String,
     pub md5: String,
@@ -197,7 +227,7 @@ impl QiniuUploader {
     /// - key: 上传文件的key，如test/Cargo.lock
     /// - data: R: AsyncReadExt + Unpin + Send + Sync + 'static
     /// - mime: 文件类型
-    /// - file_size: 文件大小，单位 bytes
+    /// - file_size: 文件大小，单位 Byte
     /// - progress_style: 进度条样式
     #[cfg_attr(feature = "docs", doc(cfg(feature = "progress-bar")))]
     #[cfg(feature = "progress-bar")]
@@ -376,9 +406,7 @@ impl QiniuUploader {
         let response = match response {
             Ok(response) => response,
             Err(e) => {
-                // 发生错误取消上传任务
-                self.part_abort(key, upload_id).await?;
-                return Err(anyhow!("上传任务发生异常，已取消, {}", e.to_string()));
+                return Err(anyhow!("上传任务发生异常，{}", e.to_string()));
             }
         };
         if self.debug {
@@ -462,8 +490,8 @@ impl QiniuUploader {
     /// ## 参数
     /// - key: 上传的key，如`test/Cargo.lock`
     /// - data: R: AsyncReadExt + Unpin + Send + Sync + 'static
-    /// - file_size: 文件大小，单位 bytes
-    /// - part_size: 分片上传的大小，单位bytes，1M-1GB之间，如果指定，优先级比`threads`参数高
+    /// - file_size: 文件大小，单位 Byte
+    /// - part_size: 分片上传的大小，单位Byte，1M-1GB之间，如果指定，优先级比`threads`参数高
     /// - threads: 分片上传线程，在未指定`part_size`参数的情况下生效，默认5
     /// - progress_style: 进度条样式
     #[cfg_attr(feature = "docs", doc(cfg(feature = "progress-bar")))]
@@ -513,8 +541,19 @@ impl QiniuUploader {
             let pb = multi.add(ProgressBar::new(buf.len() as u64));
             pb.set_style(sty.clone());
             let handle = tokio::spawn(async move {
-                this.part_upload(&key, &upload_id, part_number, buf, pb)
-                    .await
+                // 尝试10次
+                let mut try_times = 10;
+                let mut resp = Err(anyhow!("发生异常"));
+                while try_times > 0 {
+                    resp = this
+                        .part_upload(&key, &upload_id, part_number, buf.clone(), pb.clone())
+                        .await;
+                    if resp.is_ok() {
+                        break;
+                    }
+                    try_times -= 1;
+                }
+                resp
             });
             handles.push(handle);
         }
@@ -527,7 +566,10 @@ impl QiniuUploader {
                         part_number: (i + 1) as i64,
                     });
                 }
-                Err(e) => return Err(e),
+                Err(e) => {
+                    self.part_abort(key, &upload_id).await?;
+                    return Err(e);
+                }
             }
         }
         if self.debug {
@@ -543,8 +585,8 @@ impl QiniuUploader {
     /// ## 参数
     /// - key: 上传的key，如`test/Cargo.lock`
     /// - data: R: AsyncReadExt + Unpin + Send + Sync + 'static
-    /// - file_size: 文件大小，单位 bytes
-    /// - part_size: 分片上传的大小，单位bytes，1M-1GB之间，如果指定，优先级比`threads`参数高
+    /// - file_size: 文件大小，单位 Byte
+    /// - part_size: 分片上传的大小，单位Byte，1M-1GB之间，如果指定，优先级比`threads`参数高
     /// - threads: 分片上传线程，在未指定`part_size`参数的情况下生效，默认5
     #[cfg_attr(feature = "docs", doc(cfg(feature = "progress-bar")))]
     #[cfg(feature = "progress-bar")]
@@ -587,8 +629,25 @@ impl QiniuUploader {
             let key = key.to_string();
             let upload_id = upload_id.clone();
             let handle = tokio::spawn(async move {
-                this.part_upload_no_progress_bar(&key, &upload_id, part_number, part_size1, buf)
-                    .await
+                // 尝试10次
+                let mut try_times = 10;
+                let mut resp = Err(anyhow!("发生异常"));
+                while try_times > 0 {
+                    resp = this
+                        .part_upload_no_progress_bar(
+                            &key,
+                            &upload_id,
+                            part_number,
+                            part_size1,
+                            buf.clone(),
+                        )
+                        .await;
+                    if resp.is_ok() {
+                        break;
+                    }
+                    try_times -= 1;
+                }
+                resp
             });
             handles.push(handle);
         }
@@ -601,7 +660,10 @@ impl QiniuUploader {
                         part_number: (i + 1) as i64,
                     });
                 }
-                Err(e) => return Err(e),
+                Err(e) => {
+                    self.part_abort(key, &upload_id).await?;
+                    return Err(e);
+                }
             }
         }
         if self.debug {
@@ -617,8 +679,8 @@ impl QiniuUploader {
     /// ## 参数
     /// - key: 上传的key，如`test/Cargo.lock`
     /// - data: R: AsyncReadExt + Unpin + Send + Sync + 'static
-    /// - file_size: 文件大小，单位 bytes
-    /// - part_size: 分片上传的大小，单位bytes，1M-1GB之间，如果指定，优先级比`threads`参数高
+    /// - file_size: 文件大小，单位 Byte
+    /// - part_size: 分片上传的大小，单位Byte，1M-1GB之间，如果指定，优先级比`threads`参数高
     /// - threads: 分片上传线程，在未指定`part_size`参数的情况下生效，默认5
     #[cfg_attr(feature = "docs", doc(cfg(not(feature = "progress-bar"))))]
     #[cfg(not(feature = "progress-bar"))]
@@ -659,8 +721,25 @@ impl QiniuUploader {
             let key = key.to_string();
             let upload_id = upload_id.clone();
             let handle = tokio::spawn(async move {
-                this.part_upload_no_progress_bar(&key, &upload_id, part_number, part_size1, buf)
-                    .await
+                // 尝试10次
+                let mut try_times = 10;
+                let mut resp = Err(anyhow!("发生异常"));
+                while try_times > 0 {
+                    resp = this
+                        .part_upload_no_progress_bar(
+                            &key,
+                            &upload_id,
+                            part_number,
+                            part_size1,
+                            buf.clone(),
+                        )
+                        .await;
+                    if resp.is_ok() {
+                        break;
+                    }
+                    try_times -= 1;
+                }
+                resp
             });
             handles.push(handle);
         }
@@ -673,7 +752,10 @@ impl QiniuUploader {
                         part_number: (i + 1) as i64,
                     });
                 }
-                Err(e) => return Err(e),
+                Err(e) => {
+                    self.part_abort(&key, &upload_id).await?;
+                    return Err(e);
+                }
             }
         }
         if self.debug {
